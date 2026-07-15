@@ -1,113 +1,120 @@
 # Balance-Sheet Line-Item Mapping — Finance Lease Extractor
 
-This project does two things:
-
-1. **Explains the mapping** of balance-sheet (B&S) items into 5 debt/lease
-   categories, and flags the confusing cases.
-2. **Extracts, in code**, the **Finance Lease** amount from company annual
-   reports, split into **Short Term** and **Long Term**, by searching for
-   keywords and reading the number next to them.
+Extracts the **Finance Lease** liability from company annual reports, split into
+**Short Term (current)** and **Long Term (non-current)**, with evidence, a
+confidence level, and two self-verification checks. Designed for real 10-K /
+annual-report PDFs (and XLSX), not just clean text.
 
 ---
 
-## 1. The 5 categories and which line items fall under each
+## 1. The 5-category mapping (context)
 
-| # | Category | Typical line items / keywords in reports |
-|---|----------|------------------------------------------|
-| 1 | **Long-Term Debt** | Long-term borrowings; Bonds / Notes payable (non-current); Term loans (non-current); Senior notes; Debentures; Long-term loans & borrowings |
-| 2 | **Short-Term Debt** | Short-term borrowings; Bank overdraft; Commercial paper; Revolving credit (current); Working capital loans; Current borrowings |
-| 3 | **Current Portion of Long-Term Debt (CPLTD)** | Current portion / current maturities of long-term debt; Long-term debt due within one year; Current installments of long-term debt |
-| 4 | **Finance Lease — Long Term** | Finance lease liabilities (non-current); Obligations under finance leases (non-current); **Capital lease** obligations (non-current — old US term) |
-| 5 | **Finance Lease — Short Term** | Finance lease liabilities (current); Current portion of finance lease; Obligations under finance leases (current); Capital lease (current) |
+The wider task maps balance-sheet items into 5 buckets. This tool focuses on
+the two lease buckets (#4 and #5):
 
-### Where the finance-lease numbers actually live
+| # | Category | Typical line items / keywords |
+|---|----------|-------------------------------|
+| 1 | Long-Term Debt | Long-term borrowings; bonds/notes payable (non-current); term loans; senior notes; debentures |
+| 2 | Short-Term Debt | Short-term borrowings; bank overdraft; commercial paper; current borrowings |
+| 3 | Current Portion of Long-Term Debt | Current portion / current maturities of long-term debt |
+| 4 | **Finance Lease — Long Term** | Finance lease liabilities (non-current); obligations under finance leases (non-current) |
+| 5 | **Finance Lease — Short Term** | Finance lease liabilities (current); current portion of finance lease |
 
-They are **not always a separate line** on the face of the balance sheet. Look
-in this order:
-
-1. **Face of the balance sheet** — a clear line such as *"Finance lease
-   liabilities, current / non-current"* (mostly US GAAP / ASC 842).
-2. **Rolled into "Other liabilities"** — the balance sheet only shows *"Other
-   current liabilities"* / *"Other non-current liabilities"*, and the finance
-   lease amount is broken out **in the notes** ("Other liabilities include
-   finance lease obligations of X"). The code scans the notes for exactly this.
-3. **Lease maturity note** — a table splitting lease liabilities into
-   "within one year" vs "after one year".
-
-### ⚠️ Confusions the tool flags for you
-
-- **IFRS 16 "bare lease" (biggest one).** Many companies show only *"Lease
-  liabilities (current / non-current)"* with no word "finance." That figure can
-  **mix operating + finance** leases and cannot be split from the face of the
-  statement. → flagged `IFRS-bare-lease (may include operating lease)`.
-- **"Capital lease" = "finance lease"** (old US-GAAP term). Treated the same.
-- **"Operating lease" is NOT a finance lease** → those lines are excluded.
-- **Combined lines** like *"long-term debt and finance leases"* can't be split
-  cleanly → flagged `combined debt+lease line`.
-- **Buried in "other liabilities"** → flagged `verify in notes`.
+**Where the finance-lease number actually lives** (the tool searches all of these):
+the face of the balance sheet; *inside* “Other current / non-current
+liabilities” with the split only in the notes; a debt-note table (“finance
+leases recognized in the balance sheet”); or a maturity table (“due through
+YYYY”), from which the split is derived.
 
 ---
 
-## 2. How the code works (in simple words)
+## 2. How it works (simple words)
 
 `finance_lease_extractor.py`:
 
-1. **Reads** each report — PDF, TXT, or Excel — and turns it into plain text.
-2. **Searches** every line for finance-lease keywords
-   (`finance lease`, `capital lease`, `obligations under finance lease`, …).
-3. **Excludes** any line that says `operating lease` / `right-of-use`.
-4. **Decides current vs non-current** for each line using a 3-tier rule:
-   - Tier 1: a definitive phrase on the line (`current portion`, `net of
-     current`, `non-current`, `within one year`…) wins outright.
-   - Tier 2: weaker words (`long-term`, `, current`) compared by position, with
-     "non-current" masked so it can't be misread as "current".
-   - Tier 3: the nearest **section heading** above the line
-     (`CURRENT LIABILITIES` / `NON-CURRENT LIABILITIES`).
-5. **Reads the number** — the left-most money figure (the current reporting
-   year), skipping years (2024), standard references (`IFRS 16`, `ASC 842`), and
-   durations (`1 year`).
-6. **Outputs** a table + CSV: `Company | Short Term | Long Term | Flags`, with
-   the tricky cases flagged for manual review.
+1. **Reads** each report to text — Poppler `pdftotext -layout` if installed,
+   else **PyMuPDF**; XLSX via the standard library.
+2. **Scans** every line with 8 rules (R1–R8) covering the common report layouts:
+   - **R1** explicit “Finance lease liabilities, current / non-current”.
+   - **R2** finance-lease row mapped to a current parent line, with the next
+     non-current parent line (Apple-style).
+   - **R3** rows inside an explicit “Finance Leases” section.
+   - **R4** “Finance leases” row under a short-/long-term lease-liability heading.
+   - **R5** table with **Operating / Finance** columns (picks the Finance column).
+   - **R6** debt table “finance leases recognized in the balance sheet”
+     (short-term debt / long-term debt).
+   - **R7** current row + total finance-lease obligations (maturity table).
+   - **R8** derive non-current = **total − current** when only those are given.
+3. **Excludes** operating-lease-only noise: ROU assets, lease cost/expense,
+   cash-flow and undiscounted-payment lines (see `EXCLUDE_LINE_TERMS`).
+4. **Picks numbers** using the year header (latest reporting year) or the
+   Finance column, converting thousands/billions to USD millions.
+5. **Scores & ranks** candidates, notes **conflicts**, assigns a **confidence**
+   (High / Medium / Needs review / Not available), and returns
+   **NOT DISCLOSED / REVIEW rather than guessing**.
+6. **Two verifications** per company: (V1) the chosen evidence really is
+   finance-lease context; (V2) current + long-term reconciles to the disclosed
+   total.
+
+**Outputs** (in `--output-dir`, default `finance_lease_output/`):
+`finance_lease_results.csv`, `finance_lease_results.json`, and
+`finance_lease_evidence.txt` (every candidate + evidence window).
 
 ### Run it
 
 ```bash
-pip install -r requirements.txt          # only what your file types need
+pip install -r requirements.txt        # PyMuPDF fallback engine
+# (optional, better tables) install Poppler: apt-get install poppler-utils
 
-# a folder of reports
-python finance_lease_extractor.py path/to/reports/ -o results.csv
-
-# a single file
-python finance_lease_extractor.py report.pdf
-
-# add -v to see every matched line and its bucket
-python finance_lease_extractor.py samples/ -v
+python finance_lease_extractor.py path/to/reports/      # folder
+python finance_lease_extractor.py report.pdf            # single file
+python finance_lease_extractor.py reports.zip           # a zip of reports
+python finance_lease_extractor.py reports/ --engine pymupdf   # force engine
 ```
 
-Supported inputs: `.pdf`, `.txt`, `.xlsx`, `.xls`.
-
-### Teaching it new wording
-
-Company reports word things differently. To add a phrase, edit the keyword lists
-at the top of `finance_lease_extractor.py`:
-`FINANCE_LEASE_TERMS`, `EXCLUDE_TERMS`, `DEFINITIVE_CURRENT`,
-`DEFINITIVE_NONCURRENT`, etc.
+Inputs: `.pdf`, `.xlsx`, a folder, or a `.zip`.
 
 ---
 
-## 3. Verification
+## 3. Verification (reproducible)
 
-The `samples/` folder contains 5 realistic report snippets covering the tricky
-cases. Running the tool on them reproduces the hand-checked answers in
-`finance_lease_results.csv`:
+`tests/make_fixtures.py` builds 10-K-style fixtures with **known** answers and
+`tests/verify.py` asserts the extractor reproduces them:
 
-| Sample | Short Term | Long Term | Flag |
-|--------|-----------|-----------|------|
-| US GAAP explicit | 34.5 | 128.7 | ok |
-| IFRS bare lease | 47.3 | 210.6 | may include operating lease |
-| Capital lease (old term) | 3,200 | 18,700 | ok |
-| Buried in "other liabilities" | 9.4 | 41.2 | verify in notes |
-| Combined debt+lease line | 145 | 4,560 | cannot split cleanly |
+```bash
+pip install -r tests/requirements-dev.txt
+python tests/verify.py        # regenerates fixtures, runs extractor, asserts
+```
 
-> Point the tool at your 20 real reports the same way:
-> `python finance_lease_extractor.py your_reports_folder/ -o results.csv`
+| Fixture (rule) | Expected ST | Expected LT | Result |
+|---|---|---|---|
+| R1 explicit finance-lease labels | 34.5 | 128.7 | ✅ |
+| R5 Operating/Finance columns | 34.5 | 128.7 | ✅ |
+| R6 debt table (finance leases in B/S) | 500 | 1,200 | ✅ |
+| R7 total + current → R8 derived LT | 40 | 260 | ✅ |
+| Immaterial disclosure | — | — | ✅ (Immaterial/unquantified) |
+| Combined debt+lease XLSX | — | — | ✅ (Combined/not segregated) |
+
+All pass, deterministically, on two consecutive runs.
+
+---
+
+## 4. Known limitations found during verification (review these on real data)
+
+1. **R5 can fire on operating-lease rows.** `has_finance_columns()` treats an
+   “operating” line followed by a “finance” line as a Finance column, and R5’s
+   row regex also matches *“operating lease liabilities, non-current”*; plain
+   `operating lease` is **not** in `EXCLUDE_LINE_TERMS`. This creates spurious
+   candidates / false **“Needs review”** flags, and on a filing with no
+   higher-scored rule it could return the operating figure. → treat R5-only,
+   “Needs review” results as manual-check.
+2. **“Capital lease” (pre-2019 term) is not matched** — only “finance lease”.
+   Old filings that still say *capital lease* will read as *Not disclosed*.
+3. **R7 proximity assumption.** If a maturity **total** line sits within ~18
+   lines of the “short-term debt and current portion…” heading, it is also
+   counted as current. Real filings separate them; crammed layouts can miscount.
+4. **Unit detection is page-wide** — an unrelated “in thousands” note on the
+   same page can rescale a value.
+
+Items 1–2 are the highest-impact for a 20-company IFRS/US-GAAP mix. Say the word
+and I’ll add an `operating lease` exclusion to R5 and a `capital lease` alias.

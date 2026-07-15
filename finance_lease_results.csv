@@ -1,6 +1,0 @@
-Company,Finance Lease - Short Term,Finance Lease - Long Term,Flags
-01_USGAAP_explicit,34.5,128.7,
-02_IFRS_bare_lease,47.3,210.6,IFRS-bare-lease (may include operating lease)
-03_capital_lease_old,3200.0,18700.0,
-04_buried_in_other,9.4,41.2,buried in 'other liabilities' - verify in notes
-05_combined_line,145.0,4560.0,combined debt+lease line - cannot split cleanly

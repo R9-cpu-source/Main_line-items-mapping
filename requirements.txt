@@ -1,4 +1,7 @@
-# Needed only for the file types you actually use:
-pdfplumber>=0.11    # reading .pdf annual reports
-openpyxl>=3.1       # reading .xlsx / .xls
-# Plain .txt reports need no extra packages.
+# Runtime
+# Preferred PDF text engine is Poppler's `pdftotext -layout` (system package:
+#   Debian/Ubuntu: apt-get install poppler-utils
+#   macOS:        brew install poppler
+# ). If Poppler is not present the extractor falls back to PyMuPDF:
+PyMuPDF>=1.24        # fallback PDF text engine (fitz)
+# XLSX reading uses only the standard library (zipfile + ElementTree).

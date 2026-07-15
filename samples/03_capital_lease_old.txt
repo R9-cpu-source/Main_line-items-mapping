@@ -1,0 +1,12 @@
+OLDLINE RAILROAD CORP.
+BALANCE SHEET (US$ thousands)                        2018        2017
+
+CURRENT LIABILITIES
+  Accounts payable                                 45,000      42,000
+  Current maturities of long-term debt             12,500      11,800
+  Current portion of capital lease obligations      3,200       2,900
+
+LONG-TERM LIABILITIES
+  Long-term debt, net of current maturities       320,000     305,000
+  Capital lease obligations, net of current        18,700      21,400
+  Pension obligations                              25,000      24,000

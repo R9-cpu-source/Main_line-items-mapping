@@ -1,0 +1,15 @@
+HOOLI TECHNOLOGIES INC.
+CONSOLIDATED BALANCE SHEETS ($ in millions)          2024        2023
+
+Current liabilities:
+  Accounts payable                                   1,020        980
+  Current portion of long-term debt and finance leases  145        132
+
+Long-term liabilities:
+  Long-term debt and finance lease obligations       4,560      4,300
+  Deferred revenue                                     300        280
+
+Note 9 - Debt and Leases
+Long-term debt and finance lease obligations comprise senior notes of 4,300
+and finance lease obligations of 260. The current portion above includes
+finance leases of 40.
